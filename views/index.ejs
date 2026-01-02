@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Admin System</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+    <aside>
+        <h3>Admin Panel</h3>
+        <div class="nav-item active" onclick="switchView('admin-view', this)">Purchases</div>
+        <div class="nav-item" onclick="switchView('chat-view', this)">AI Chat</div>
+    </aside>
+
+    <main>
+        <!-- Purchase View -->
+        <section id="admin-view" class="section active">
+            <div class="grid">
+                <div class="card">
+                    <h3>New Purchase</h3>
+                    <form id="purchaseForm">
+                        <input type="text" id="customerName" placeholder="Customer Name" required>
+                        <select id="productSelect" required><option value="">Loading...</option></select>
+                        <div id="stockLabel" style="margin-bottom:10px; font-size:0.9rem; color:#666;"></div>
+                        <input type="number" id="quantity" min="1" value="1" required>
+                        <button>Buy Now</button>
+                    </form>
+                </div>
+                <div class="card">
+                    <h3>Stats</h3>
+                    <p>Active Orders: <b id="stat-orders">0</b></p>
+                    <p>Revenue: <b id="stat-revenue">$0.00</b></p>
+                </div>
+            </div>
+            <div class="card">
+                <h3>Transactions</h3>
+                <table>
+                    <thead><tr><th>ID</th><th>Customer</th><th>Product</th><th>Status</th><th>Action</th></tr></thead>
+                    <tbody id="purchaseTable"></tbody>
+                </table>
+            </div>
+        </section>
+
+        <!-- Chat View -->
+        <section id="chat-view" class="section">
+            <div class="card">
+                <h3>AI Assistant</h3>
+                <div class="chat-container">
+                    <div class="chat-messages" id="chatMsgs">
+                        <div class="message msg-ai">Hello! I can answer admin questions.</div>
+                    </div>
+                    <div style="padding:10px; border-top:1px solid #eee; display:flex; gap:10px;">
+                        <input type="text" id="chatInput" placeholder="Ask AI..." onkeypress="if(event.key==='Enter') sendChat()">
+                        <button onclick="sendChat()">Send</button>
+                    </div>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <script>
+        let productsCache = [];
+
+        async function load() {
+            // Load Products
+            const res = await fetch('/api/products');
+            productsCache = await res.json();
+            const sel = document.getElementById('productSelect');
+            sel.innerHTML = '<option value="">Choose Product</option>';
+            productsCache.forEach(p => {
+                const opt = document.createElement('option');
+                opt.value = p.id; opt.textContent = `${p.name} ($${p.price})`;
+                sel.appendChild(opt);
+            });
+            refreshStats();
+            refreshTable();
+        }
+
+        async function refreshStats() {
+            const r = await fetch('/api/stats');
+            const d = await r.json();
+            document.getElementById('stat-orders').textContent = d.activeOrders;
+            document.getElementById('stat-revenue').textContent = `$${d.revenue.toFixed(2)}`;
+        }
+
+        async function refreshTable() {
+            const r = await fetch('/api/purchases');
+            const d = await r.json();
+            const tb = document.getElementById('purchaseTable');
+            tb.innerHTML = '';
+            d.forEach(p => {
+                const btn = p.status === 'Active' ? `<button class="btn-danger" onclick="cancel(${p.id})">Cancel</button>` : '-';
+                tb.innerHTML += `<tr><td>${p.id}</td><td>${p.customer}</td><td>${p.productName}</td><td>${p.status}</td><td>${btn}</td></tr>`;
+            });
+        }
+
+        document.getElementById('purchaseForm').onsubmit = async (e) => {
+            e.preventDefault();
+            const data = {
+                customer: document.getElementById('customerName').value,
+                productId: parseInt(document.getElementById('productSelect').value),
+                quantity: parseInt(document.getElementById('quantity').value)
+            };
+            const r = await fetch('/api/purchase', {
+                method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(data)
+            });
+            if(r.ok) { alert('Success!'); load(); } 
+            else { const x = await r.json(); alert(x.error); }
+        };
+
+        async function cancel(id) {
+            if(!confirm('Cancel order?')) return;
+            await fetch(`/api/cancel/${id}`, {method: 'POST'});
+            load();
+        }
+
+        async function sendChat() {
+            const inp = document.getElementById('chatInput');
+            const txt = inp.value; if(!txt) return;
+            document.getElementById('chatMsgs').innerHTML += `<div class="message msg-user">${txt}</div>`;
+            inp.value = '';
+            const r = await fetch('/api/chat', {
+                method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({message: txt})
+            });
+            const d = await r.json();
+            document.getElementById('chatMsgs').innerHTML += `<div class="message msg-ai">${d.reply}</div>`;
+            document.getElementById('chatMsgs').scrollTop = 9999;
+        }
+
+        function switchView(id, nav) {
+            document.querySelectorAll('.section').forEach(e=>e.classList.remove('active'));
+            document.getElementById(id).classList.add('active');
+            document.querySelectorAll('.nav-item').forEach(e=>e.classList.remove('active'));
+            if(nav) nav.classList.add('active');
+        }
+
+        // Update stock label
+        document.getElementById('productSelect').onchange = function() {
+            const p = productsCache.find(x => x.id == this.value);
+            document.getElementById('stockLabel').textContent = p ? `Stock: ${p.stock}` : '';
+        };
+
+        load();
+    </script>
+</body>
+</html>
